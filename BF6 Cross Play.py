@@ -100,12 +100,30 @@ def documents_roots():
     return uniq
 
 def game_settings_base():
-    for doc in documents_roots():
-        base = os.path.join(doc, "Battlefield 6", "settings")
-        if os.path.isdir(base):
-            return base
-    up = os.environ.get("USERPROFILE", "")
-    return os.path.join(up, "Documents", "Battlefield 6", "settings")
+    # Scan A:\Users\<user>\Documents .. Z:\Users\<user>\Documents for BF6 profiles
+    user = os.environ.get("USERNAME")
+    if not user:
+        up = os.environ.get("USERPROFILE", "")
+        user = os.path.basename(up) if up else ""
+    if not user:
+        sys.exit(err("[ERROR] Could not determine current username"))
+
+    targets = [
+        os.path.join("Documents", "Battlefield 6", "settings", "steam", "PROFSAVE_profile"),
+        os.path.join("Documents", "Battlefield 6", "settings", "PROFSAVE_profile"),
+    ]
+    for code in range(65, 91):  # A..Z
+        drive = f"{chr(code)}:\\"
+        base = os.path.join(drive, "Users", user)
+        if not os.path.isdir(base):
+            continue
+        for t in targets:
+            test = os.path.join(base, t)
+            if os.path.isfile(test):
+                print(info(f"[INFO] Found Battlefield 6 settings on drive {drive[0]}"))
+                return os.path.dirname(os.path.dirname(test))  # ...\Battlefield 6\settings
+
+    sys.exit(err("[ERROR] Could not locate Battlefield 6 settings on any drive"))
 
 def paths(platform):
     base = game_settings_base()
@@ -204,13 +222,16 @@ def main_menu(platform):
 # ---------- Argparse ----------
 def main():
     p = argparse.ArgumentParser(description="BF6 Cross-Play CLI for Steam and EA launchers.")
-    p.add_argument("--platform", choices=["steam","ea"], help="Select launcher without prompt.")
+    p.add_argument("--platform", choices=["steam", "ea"], help="Select launcher without prompt.")
     sub = p.add_subparsers(dest="cmd")
     sub.add_parser("disable")
     sub.add_parser("enable")
     sub.add_parser("status")
     sub.add_parser("menu")
     a = p.parse_args()
+
+    # Scan drives before anything else
+    _ = game_settings_base()
 
     platform = a.platform or select_platform_interactive()
 
@@ -226,6 +247,7 @@ def main():
         p.print_help()
 
 def hold_if_no_tty():
+    # keep console open if launched by double-click
     if not sys.stdin.isatty():
         try:
             input("\nPress Enter to close...")
