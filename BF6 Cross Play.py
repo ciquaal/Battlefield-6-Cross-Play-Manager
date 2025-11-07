@@ -1,8 +1,5 @@
-#!/usr/bin/env python3
 import argparse, os, shutil, sys, glob
 
-# ---------- Startup safety ----------
-# Prevent UnicodeEncodeError on some Windows consoles
 try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
     sys.stderr.reconfigure(encoding='utf-8', errors='replace')
@@ -100,7 +97,6 @@ def documents_roots():
     return uniq
 
 def game_settings_base():
-    # Scan A:\Users\<user>\Documents .. Z:\Users\<user>\Documents for BF6 profiles
     user = os.environ.get("USERNAME")
     if not user:
         up = os.environ.get("USERPROFILE", "")
@@ -121,7 +117,7 @@ def game_settings_base():
             test = os.path.join(base, t)
             if os.path.isfile(test):
                 print(info(f"[INFO] Found Battlefield 6 settings on drive {drive[0]}"))
-                return os.path.dirname(os.path.dirname(test))  # ...\Battlefield 6\settings
+                return os.path.dirname(os.path.dirname(test))
 
     sys.exit(err("[ERROR] Could not locate Battlefield 6 settings on any drive"))
 
@@ -230,7 +226,6 @@ def main():
     sub.add_parser("menu")
     a = p.parse_args()
 
-    # Scan drives before anything else
     _ = game_settings_base()
 
     platform = a.platform or select_platform_interactive()
@@ -247,7 +242,6 @@ def main():
         p.print_help()
 
 def hold_if_no_tty():
-    # keep console open if launched by double-click
     if not sys.stdin.isatty():
         try:
             input("\nPress Enter to close...")
