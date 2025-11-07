@@ -97,27 +97,41 @@ def documents_roots():
     return uniq
 
 def game_settings_base():
-    user = os.environ.get("USERNAME")
-    if not user:
-        up = os.environ.get("USERPROFILE", "")
-        user = os.path.basename(up) if up else ""
-    if not user:
-        sys.exit(err("[ERROR] Could not determine current username"))
-
+    # Scan A:..Z: under \Users\<any user>\Documents (and OneDrive variants)
     targets = [
-        os.path.join("Documents", "Battlefield 6", "settings", "steam", "PROFSAVE_profile"),
-        os.path.join("Documents", "Battlefield 6", "settings", "PROFSAVE_profile"),
+        os.path.join("Battlefield 6", "settings", "steam", "PROFSAVE_profile"),
+        os.path.join("Battlefield 6", "settings", "PROFSAVE_profile"),
     ]
-    for code in range(65, 91):  # A..Z
+    doc_variants = [
+        "Documents",
+        os.path.join("OneDrive", "Documents"),
+        os.path.join("OneDrive - *", "Documents"),
+    ]
+    skip_users = {"Public", "Default", "Default User", "All Users"}
+
+    import glob as _glob
+
+    for code in range(65, 91):
         drive = f"{chr(code)}:\\"
-        base = os.path.join(drive, "Users", user)
-        if not os.path.isdir(base):
+        users_root = os.path.join(drive, "Users")
+        if not os.path.isdir(users_root):
             continue
-        for t in targets:
-            test = os.path.join(base, t)
-            if os.path.isfile(test):
-                print(info(f"[INFO] Found Battlefield 6 settings on drive {drive[0]}"))
-                return os.path.dirname(os.path.dirname(test))
+
+        try:
+            user_dirs = [d for d in os.listdir(users_root)
+                         if d not in skip_users and os.path.isdir(os.path.join(users_root, d))]
+        except Exception:
+            continue
+
+        for user_name in user_dirs:
+            base_user = os.path.join(users_root, user_name)
+            for dv in doc_variants:
+                for doc_root in _glob.glob(os.path.join(base_user, dv)):
+                    for t in targets:
+                        test = os.path.join(doc_root, t)
+                        if os.path.isfile(test):
+                            print(info(f"[INFO] Found Battlefield 6 settings on drive {drive[0]} (user: {user_name})"))
+                            return os.path.dirname(os.path.dirname(test))
 
     sys.exit(err("[ERROR] Could not locate Battlefield 6 settings on any drive"))
 
