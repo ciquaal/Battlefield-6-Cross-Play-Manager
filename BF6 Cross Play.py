@@ -1,15 +1,27 @@
 #!/usr/bin/env python3
-import argparse, os, shutil, sys
+import argparse, os, shutil, sys, glob
+
+# ---------- Startup safety ----------
+# Prevent UnicodeEncodeError on some Windows consoles
+try:
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+except Exception:
+    pass
+
+IS_TTY = sys.stdout.isatty()
+IS_UTF8 = (getattr(sys.stdout, "encoding", "") or "").lower().startswith("utf")
+USE_COLOR = IS_TTY and os.environ.get("NO_COLOR") is None
+SHOW_BANNER = IS_TTY and IS_UTF8 and os.environ.get("NO_BANNER") is None
 
 CROSSPLAY_LINE = "GstGameplay.CrossPlayEnable 0"
 SIGNATURE = "— Babboon."
-USE_COLOR = sys.stdout.isatty() and os.environ.get("NO_COLOR") is None
 
 def c(code, s): return f"\033[{code}m{s}\033[0m" if USE_COLOR else s
 def ok(s): return c("92", s)
 def warn(s): return c("93", s)
 def err(s): return c("91", s)
-def dim(s): return c("2", s)
+def dim(s): return c("2",  s)
 def info(s): return c("94", s)
 
 BANNER = r"""
@@ -41,14 +53,20 @@ Backup is automatic once on first run after cleaning the profile.
 FOOT = "\n" + "─"*76 + "\n" + dim(SIGNATURE) + "\n"
 
 # ---------- UI ----------
-def ui_clear(): os.system("cls" if os.name == "nt" else "clear")
+def ui_clear():
+    os.system("cls" if os.name == "nt" else "clear")
+
 def ui(lines=None, platform=None):
     ui_clear()
-    print(c("96", BANNER))
+    if SHOW_BANNER:
+        print(c("96", BANNER))
+    else:
+        print("Battlefield 6 Cross-Play Manager")
+        print("Backup is automatic once on first run after cleaning the profile.\n")
     if platform:
         print(dim(f"Launcher: {platform.upper()}"))
     if lines:
-        for line in lines: 
+        for line in lines:
             if line: print(line)
     print()
 
@@ -62,35 +80,66 @@ def select_platform_interactive():
         ui([err("Invalid choice.")])
 
 # ---------- Paths ----------
+def documents_roots():
+    """Return candidate 'Documents' roots, handling OneDrive redirection."""
+    up = os.environ.get("USERPROFILE", "")
+    if not up:
+        sys.exit(err("[ERROR] USERPROFILE not set"))
+    candidates = [
+        os.path.join(up, "Documents"),
+        os.path.join(up, "OneDrive", "Documents"),
+    ]
+    candidates.extend([os.path.join(up, d, "Documents")
+                       for d in os.listdir(up)
+                       if d.startswith("OneDrive") and os.path.isdir(os.path.join(up, d))])
+    seen, uniq = set(), []
+    for p in candidates:
+        if p not in seen:
+            seen.add(p)
+            uniq.append(p)
+    return uniq
+
+def game_settings_base():
+    for doc in documents_roots():
+        base = os.path.join(doc, "Battlefield 6", "settings")
+        if os.path.isdir(base):
+            return base
+    up = os.environ.get("USERPROFILE", "")
+    return os.path.join(up, "Documents", "Battlefield 6", "settings")
+
 def paths(platform):
-    up = os.environ.get("USERPROFILE")
-    if not up: sys.exit(err("[ERROR] USERPROFILE not set"))
-    base = os.path.join(up, "Documents", "Battlefield 6", "settings")
+    base = game_settings_base()
     if platform == "steam":
-        prof = os.path.join(base, "steam", "PROFSAVE_profile")
+        prof   = os.path.join(base, "steam", "PROFSAVE_profile")
         backup = os.path.join(base, "steam", "backup", "PROFSAVE_profile")
     else:  # ea
-        prof = os.path.join(base, "PROFSAVE_profile")
+        prof   = os.path.join(base, "PROFSAVE_profile")
         backup = os.path.join(base, "backup", "PROFSAVE_profile")
     return base, prof, backup
 
 # ---------- File ops ----------
-def read(p):  return open(p,encoding="utf-8",errors="ignore").read()
-def write(p,t): open(p,"w",encoding="utf-8").write(t)
+def read(p):  return open(p, encoding="utf-8", errors="ignore").read()
+def write(p,t):
+    os.makedirs(os.path.dirname(p), exist_ok=True)
+    open(p, "w", encoding="utf-8").write(t)
+
 def clean(t):
-    return "\n".join([l for l in t.replace("\r","").split("\n")
-                      if not l.strip().startswith("GstGameplay.CrossPlayEnable")]).rstrip()+"\n"
+    return "\n".join(
+        [l for l in t.replace("\r","").split("\n")
+         if not l.strip().startswith("GstGameplay.CrossPlayEnable")]
+    ).rstrip() + "\n"
 
 def ensure_once(platform):
     _, prof, backup = paths(platform)
-    if not os.path.isfile(prof): sys.exit(err(f"[ERROR] PROFSAVE_profile not found: {prof}"))
+    if not os.path.isfile(prof):
+        sys.exit(err(f"[ERROR] PROFSAVE_profile not found: {prof}"))
     cur = read(prof)
     new = clean(cur)
     if new != cur:
-        write(prof, new)   # remove existing overrides in-place
+        write(prof, new)
     if not os.path.isfile(backup):
         os.makedirs(os.path.dirname(backup), exist_ok=True)
-        shutil.copy2(prof, backup)  # backup from cleaned file
+        shutil.copy2(prof, backup)
         return True
     return False
 
@@ -118,7 +167,8 @@ def enable(platform):
 
 def status(platform):
     _, prof, _ = paths(platform)
-    if not os.path.isfile(prof): sys.exit(err(f"[ERROR] PROFSAVE_profile not found: {prof}"))
+    if not os.path.isfile(prof):
+        sys.exit(err(f"[ERROR] PROFSAVE_profile not found: {prof}"))
     txt = read(prof)
     if CROSSPLAY_LINE in txt:
         ui([ok("Cross play has been disabled, BOT ON!")], platform=platform)
@@ -136,15 +186,20 @@ def main_menu(platform):
         print(c("95"," [S] ")+"Switch launcher")
         print(c("95"," [Q] ")+"Quit")
         ch = input(dim("\nSelect: ")).strip().lower()
-        if ch == "1": disable(platform)
-        elif ch == "2": enable(platform)
-        elif ch == "3": status(platform)
+        if ch == "1":
+            disable(platform)
+        elif ch == "2":
+            enable(platform)
+        elif ch == "3":
+            status(platform)
         elif ch == "s":
             ui(platform=platform)
             platform = select_platform_interactive()
             ui([info(f"Switched to {platform.upper()}.")], platform=platform)
-        elif ch in ("q","quit","exit"): break
-        else: ui([err("Invalid choice.")], platform=platform)
+        elif ch in ("q","quit","exit"):
+            break
+        else:
+            ui([err("Invalid choice.")], platform=platform)
 
 # ---------- Argparse ----------
 def main():
@@ -170,5 +225,22 @@ def main():
     else:
         p.print_help()
 
+def hold_if_no_tty():
+    if not sys.stdin.isatty():
+        try:
+            input("\nPress Enter to close...")
+        except Exception:
+            pass
+
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except SystemExit:
+        hold_if_no_tty()
+        raise
+    except Exception as e:
+        print(err(f"\n[CRASH] {e}"))
+        hold_if_no_tty()
+        raise
+    finally:
+        hold_if_no_tty()
