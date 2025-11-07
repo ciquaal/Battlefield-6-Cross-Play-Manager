@@ -97,7 +97,6 @@ def documents_roots():
     return uniq
 
 def game_settings_base():
-    # Scan A:..Z: under \Users\<any user>\Documents (and OneDrive variants)
     targets = [
         os.path.join("Battlefield 6", "settings", "steam", "PROFSAVE_profile"),
         os.path.join("Battlefield 6", "settings", "PROFSAVE_profile"),
